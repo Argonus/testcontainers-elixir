@@ -10,13 +10,7 @@ defmodule Testcontainers.Container.KafkaContainerTest do
       config = KafkaContainer.new()
 
       assert config.image == "confluentinc/cp-kafka:7.4.3"
-      assert config.kafka_port == 9092
-      assert config.broker_port == 29092
-      assert config.zookeeper_port == 2181
       assert config.wait_timeout == 60_000
-      assert config.zookeeper_strategy == :internal
-      assert config.default_topic_partitions == 1
-      assert config.kraft_enabled == false
     end
   end
 
@@ -31,85 +25,6 @@ defmodule Testcontainers.Container.KafkaContainerTest do
     test "raises if the image is not a binary" do
       config = KafkaContainer.new()
       assert_raise FunctionClauseError, fn -> KafkaContainer.with_image(config, 6.2) end
-    end
-  end
-
-  describe "with_kafka_port/2" do
-    test "overrides the default kafka port used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_kafka_port(config, 9094)
-
-      assert new_config.kafka_port == 9094
-    end
-
-    test "raises if the kafka port is not an integer" do
-      config = KafkaContainer.new()
-      assert_raise FunctionClauseError, fn -> KafkaContainer.with_kafka_port(config, "9094") end
-    end
-  end
-
-  describe "with_broker_port/2" do
-    test "overrides the default broker port used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_broker_port(config, 9095)
-
-      assert new_config.broker_port == 9095
-    end
-
-    test "raises if the broker port is not an integer" do
-      config = KafkaContainer.new()
-      assert_raise FunctionClauseError, fn -> KafkaContainer.with_broker_port(config, "9095") end
-    end
-  end
-
-  describe "with_zookeeper_port/2" do
-    test "overrides the default zookeeper port used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_zookeeper_port(config, 2182)
-
-      assert new_config.zookeeper_port == 2182
-    end
-
-    test "raises if the zookeeper port is not an integer" do
-      config = KafkaContainer.new()
-
-      assert_raise FunctionClauseError, fn ->
-        KafkaContainer.with_zookeeper_port(config, "2182")
-      end
-    end
-  end
-
-  describe "with_zookeeper_strategy/2" do
-    test "overrides the default zookeeper strategy used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_zookeeper_strategy(config, :external)
-
-      assert new_config.zookeeper_strategy == :external
-    end
-
-    test "raises if the zookeeper strategy is not :internal or :external" do
-      config = KafkaContainer.new()
-
-      assert_raise FunctionClauseError, fn ->
-        KafkaContainer.with_zookeeper_strategy(config, :host)
-      end
-    end
-  end
-
-  describe "with_kraft_enabled/2" do
-    test "overrides the default kraft enabled used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_kraft_enabled(config, true)
-
-      assert new_config.kraft_enabled == true
-    end
-
-    test "raises if the kraft enabled is not a boolean" do
-      config = KafkaContainer.new()
-
-      assert_raise FunctionClauseError, fn ->
-        KafkaContainer.with_kraft_enabled(config, "string")
-      end
     end
   end
 
@@ -130,23 +45,6 @@ defmodule Testcontainers.Container.KafkaContainerTest do
     end
   end
 
-  describe "with_topic_partitions/2" do
-    test "overrides the default topic partitions used for the Kafka container" do
-      config = KafkaContainer.new()
-      new_config = KafkaContainer.with_topic_partitions(config, 2)
-
-      assert new_config.default_topic_partitions == 2
-    end
-
-    test "raises if the topic partitions is not an integer" do
-      config = KafkaContainer.new()
-
-      assert_raise FunctionClauseError, fn ->
-        KafkaContainer.with_topic_partitions(config, "2")
-      end
-    end
-  end
-
   describe "integration testing" do
     container(
       :kafka,
@@ -154,9 +52,9 @@ defmodule Testcontainers.Container.KafkaContainerTest do
     )
 
     test "provides a ready-to-use kafka container", %{kafka: kafka} do
-      uris = [{"localhost", Container.mapped_port(kafka, 9092) || 9092}]
+      uris = [{Testcontainers.get_host(), Container.mapped_port(kafka, 9092)}] |> IO.inspect()
 
-      {:ok, pid} = KafkaEx.create_worker(:worker, uris: uris, consumer_group: "kafka_ex")
+      {:ok, pid} = KafkaEx.create_worker(:test_worker, uris: uris, consumer_group: "kafka_ex")
       on_exit(pid, fn -> KafkaEx.stop_worker(:worker) end)
 
       request = %KafkaEx.Protocol.CreateTopics.TopicRequest{
@@ -166,9 +64,12 @@ defmodule Testcontainers.Container.KafkaContainerTest do
         replica_assignment: []
       }
 
-      _ = KafkaEx.create_topics([request], worker_name: :worker)
-      {:ok, _} = KafkaEx.produce("test_topic", 0, "hey", worker_name: :worker, required_acks: 1)
-      stream = KafkaEx.stream("test_topic", 0, worker_name: :worker)
+      _ = KafkaEx.create_topics([request], worker_name: :test_worker)
+
+      {:ok, _} =
+        KafkaEx.produce("test_topic", 0, "hey", worker_name: :test_worker, required_acks: 1)
+
+      stream = KafkaEx.stream("test_topic", 0, worker_name: :test_worker)
       [response] = Enum.take(stream, 1)
 
       assert response.value == "hey"

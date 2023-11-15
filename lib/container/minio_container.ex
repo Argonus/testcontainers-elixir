@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 defmodule Testcontainers.MinioContainer do
   @moduledoc """
   Provides functionality for creating and managing Minio container configurations.
